@@ -1,0 +1,31 @@
+[package]
+name = "space"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# User interface
+clap = { version = "4.0", features = ["derive"] }
+color-eyre = { version = "0.6", default-features = false }
+
+# Capitalization, progress bars, user input
+titlecase = "2.2"
+indicatif = "0.17"
+dialoguer = { version = "0.10", features = ["fuzzy-select"] }
+
+# Serialization and deserialization
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+
+# Http client
+ureq = "2.5"
+
+# Configuration
+toml = "0.5.9"
+platform-dirs = "0.3.0"
+
+# Guess mime type for path
+mime_guess = "2.0.4"
+
+# Unique identifiers
+uuid = { version = "1.2", features = ["v4", "fast-rng"] }
