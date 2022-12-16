@@ -53,13 +53,13 @@ fn main() -> Result<()> {
             let defaults = read_config().unwrap_or_default();
             
             let endpoint = Input::<String>::new()
-                .with_prompt("Supabase endpoint")
+                .with_prompt("Supabase")
                 .with_initial_text(defaults.endpoint)
                 .interact_text()?;
 
-            let api_key = Input::<String>::new()
-                .with_prompt("API key")
-                .with_initial_text(defaults.api_key)
+            let authorization = Input::<String>::new()
+                .with_prompt("Authorization")
+                .with_initial_text(defaults.authorization)
                 .interact_text()?;
             
             // Create config file
@@ -68,7 +68,7 @@ fn main() -> Result<()> {
 
             // Serialize to toml
             let mut file = File::create(config_file)?;
-            let config = Config::new(endpoint, api_key);
+            let config = Config { endpoint, authorization };
             let toml = toml::to_string(&config)?;
 
             // Write to file
@@ -78,7 +78,7 @@ fn main() -> Result<()> {
         Command::Upload(upload) => {
             // Get config
             let config = read_config()?;
-            let client = StorageClient::new(&config.endpoint, &config.api_key);
+            let client = StorageClient::new(&config.endpoint, &config.authorization);
 
             // Verify that web assembly exists
             if !upload.wasm.exists() {
