@@ -49,14 +49,19 @@ fn main() -> Result<()> {
     // Parse arguments
     match args.command {
         Command::Init => {
+            // Get defaults
+            let defaults = read_config().unwrap_or_default();
+            
             let endpoint = Input::<String>::new()
                 .with_prompt("Supabase endpoint")
+                .with_initial_text(defaults.endpoint)
                 .interact_text()?;
 
             let api_key = Input::<String>::new()
                 .with_prompt("API key")
+                .with_initial_text(defaults.api_key)
                 .interact_text()?;
-
+            
             // Create config file
             let config_file = config_path()?;
             let message = format!("Wrote settings to {}", config_file.display());

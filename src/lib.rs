@@ -4,7 +4,7 @@ pub use color_eyre::eyre::{eyre, Result};
 // Upload form
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct Config {
     pub endpoint: String,
     pub api_key: String,
@@ -170,6 +170,7 @@ impl StorageBuilder<'_> {
         let mime_type = mime_guess::from_path(path).first_or_octet_stream();
         ureq::post(&url)
             .set("Authorization", &format!("Bearer {}", self.api_key))
+            .set("apikey", self.api_key)
             .set("Content-Type", mime_type.essence_str())
             .send_bytes(bytes)?;
         Ok(())
