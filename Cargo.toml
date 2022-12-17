@@ -29,3 +29,4 @@ mime_guess = "2.0.4"
 
 # Unique identifiers
 uuid = { version = "1.2", features = ["v4", "fast-rng"] }
+sailfish = "0.5.0"

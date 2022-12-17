@@ -1,19 +1,32 @@
 // Imports
 pub use color_eyre::eyre::{eyre, Result};
 
+// Templates
+pub mod template {
+    use sailfish::TemplateOnce;
+
+    #[derive(TemplateOnce)]
+    #[template(path = "Cargo.toml")]
+    pub struct CargoToml {
+        pub name: String,
+    }
+
+    #[derive(TemplateOnce)]
+    #[template(path = "lib.rs")]
+    pub struct LibRs;
+    
+    #[derive(TemplateOnce)]
+    #[template(path = "config.toml")]
+    pub struct ConfigToml;
+}
+
 // Upload form
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct Config {
     pub endpoint: String,
-    pub api_key: String,
-}
-
-impl Config {
-    pub fn new(endpoint: String, api_key: String) -> Self {
-        Self { endpoint, api_key }
-    }
+    pub authorization: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -102,10 +115,10 @@ impl Format {
                 width: 150,
                 height: 125
                     + [targets.len(), sources.len()]
-                        .into_iter()
-                        .max()
-                        .unwrap_or(0)
-                        * 50,
+                    .into_iter()
+                    .max()
+                    .unwrap_or(0)
+                    * 50,
                 background_color: String::from("#ffd9b3"),
             },
             targets,
@@ -120,56 +133,39 @@ impl Format {
 
 pub struct StorageClient {
     endpoint: String,
-    api_key: String,
+    authorization: String,
 }
 
 impl StorageClient {
-    /// Creates new client. endpoint should be https://hyjboblkjeevkzaqsyxe.supabase.co/storage/v1
-    pub fn new(endpoint: &str, api_key: &str) -> Self {
+    /// Creates new client. endpoint should be https://hyjboblkjeevkzaqsyxe.supabase.co
+    pub fn new(endpoint: &str, authorization: &str) -> Self {
         Self {
             endpoint: format!("{endpoint}/storage/v1"),
-            api_key: api_key.to_string(),
+            authorization: authorization.to_string(),
         }
     }
 
     /// Bucket to look for files, such as node-files
     pub fn from(&self, bucket: &str) -> StorageBuilder {
         StorageBuilder {
-            endpoint: &self.endpoint,
-            api_key: &self.api_key,
+            config: &self,
             bucket: bucket.to_string(),
         }
     }
 }
 
 pub struct StorageBuilder<'a> {
-    endpoint: &'a str,
-    api_key: &'a str,
+    config: &'a StorageClient,
     bucket: String,
 }
 
 impl StorageBuilder<'_> {
-    /// Download file from path, such as 188/json.wasm-e1c78644-cb8a-46ba-bd6e-026cdfd6a797
-    pub fn download(self, path: &str) -> Result<Vec<u8>> {
-        let url = format!("{}/object/{}/{}", self.endpoint, self.bucket, path);
-        let response = ureq::get(&url)
-            .set("Authorization", &format!("Bearer {}", self.api_key))
-            .call()?;
-        let len: usize = response
-            .header("Content-Length")
-            .ok_or(eyre!("Missing Content-Length"))?
-            .parse()?;
-        let mut bytes: Vec<u8> = Vec::with_capacity(len);
-        response.into_reader().read_to_end(&mut bytes)?;
-        Ok(bytes)
-    }
-
     /// Upload file from path
     pub fn upload(self, path: &str, bytes: &[u8]) -> Result<()> {
-        let url = format!("{}/object/{}/{}", self.endpoint, self.bucket, path);
+        let url = format!("{}/object/{}/{}", self.config.endpoint, self.bucket, path);
         let mime_type = mime_guess::from_path(path).first_or_octet_stream();
         ureq::post(&url)
-            .set("Authorization", &format!("Bearer {}", self.api_key))
+            .set("Authorization", &format!("Bearer {}", self.config.authorization))
             .set("Content-Type", mime_type.essence_str())
             .send_bytes(bytes)?;
         Ok(())

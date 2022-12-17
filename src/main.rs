@@ -2,7 +2,8 @@ use clap::{Parser, Subcommand};
 use dialoguer::{FuzzySelect, Input};
 use indicatif::ProgressBar;
 use platform_dirs::AppDirs;
-use space::{eyre, Config, Format, Result, StorageClient};
+use sailfish::TemplateOnce;
+use space::{eyre, template, Config, Format, Result, StorageClient};
 use std::{fs::File, io::Write, path::PathBuf, time::Duration};
 use titlecase::titlecase;
 use uuid::Uuid;
@@ -18,6 +19,8 @@ struct Args {
 enum Command {
     /// Authenticate and store locally
     Init,
+    /// Create a new WASM project
+    New(New),
     /// Upload WASM node to Space Operator
     Upload(Upload),
 }
@@ -28,6 +31,12 @@ struct Upload {
     wasm: PathBuf,
     /// Path to sourceccode
     source_code: PathBuf,
+}
+
+#[derive(Parser)]
+struct New {
+    /// Project name
+    name: String,
 }
 
 fn config_path() -> Result<PathBuf> {
@@ -49,12 +58,17 @@ fn main() -> Result<()> {
     // Parse arguments
     match args.command {
         Command::Init => {
+            // Get defaults
+            let defaults = read_config().unwrap_or_default();
+
             let endpoint = Input::<String>::new()
-                .with_prompt("Supabase endpoint")
+                .with_prompt("Supabase")
+                .with_initial_text(defaults.endpoint)
                 .interact_text()?;
 
-            let api_key = Input::<String>::new()
-                .with_prompt("API key")
+            let authorization = Input::<String>::new()
+                .with_prompt("Authorization")
+                .with_initial_text(defaults.authorization)
                 .interact_text()?;
 
             // Create config file
@@ -63,31 +77,33 @@ fn main() -> Result<()> {
 
             // Serialize to toml
             let mut file = File::create(config_file)?;
-            let config = Config::new(endpoint, api_key);
+            let config = Config {
+                endpoint,
+                authorization,
+            };
             let toml = toml::to_string(&config)?;
 
             // Write to file
             file.write_all(toml.as_bytes())?;
             println!("{message}");
         }
-        Command::Upload(upload) => {
+        Command::Upload(Upload { wasm, source_code }) => {
             // Get config
             let config = read_config()?;
-            let client = StorageClient::new(&config.endpoint, &config.api_key);
+            let client = StorageClient::new(&config.endpoint, &config.authorization);
 
             // Verify that web assembly exists
-            if !upload.wasm.exists() {
-                return Err(eyre!("{} doesn't exist", upload.wasm.display()));
+            if !wasm.exists() {
+                return Err(eyre!("{} doesn't exist", wasm.display()));
             }
 
             // Verify that source code exists
-            if !upload.source_code.exists() {
-                return Err(eyre!("{} doesn't exist", upload.source_code.display()));
+            if !source_code.exists() {
+                return Err(eyre!("{} doesn't exist", source_code.display()));
             }
 
             // Start dialogue
-            let suggested_name = upload
-                .wasm
+            let suggested_name = wasm
                 .file_stem()
                 .and_then(|it| it.to_str())
                 .unwrap_or_default();
@@ -121,14 +137,14 @@ fn main() -> Result<()> {
             spinner.enable_steady_tick(Duration::from_millis(10));
 
             // Web assembly
-            let wasm_name = upload.wasm.display();
-            let bytes = std::fs::read(&upload.wasm)?;
+            let wasm_name = wasm.display();
+            let bytes = std::fs::read(&wasm)?;
             let path = format!("{base_path}/{wasm_name}");
             client.from("node-files").upload(&path, &bytes)?;
 
             // Source code
-            let source_code_name = upload.source_code.display();
-            let bytes = std::fs::read(&upload.source_code)?;
+            let source_code_name = source_code.display();
+            let bytes = std::fs::read(&source_code)?;
             let path = format!("{base_path}/{source_code_name}");
             client.from("node-files").upload(&path, &bytes)?;
 
@@ -138,6 +154,25 @@ fn main() -> Result<()> {
 
             spinner.finish_and_clear();
             println!("Finished uploading {name}@{version}!");
+        }
+        Command::New(New { name }) => {
+            // Create folders
+            std::fs::create_dir_all(format!("{name}/src"))?;
+            std::fs::create_dir_all(format!("{name}/.cargo"))?;
+            
+            // Create Cargo.toml
+            let metadata = template::CargoToml { name: name.clone() }.render_once()?;
+            std::fs::write(format!("{name}/Cargo.toml"), metadata)?;
+
+            // Create lib.rs
+            let main = template::LibRs.render_once()?;
+            std::fs::write(format!("{name}/src/lib.rs"), main)?;
+
+            // Create config.toml
+            let config = template::ConfigToml.render_once()?;
+            std::fs::write(format!("{name}/.cargo/config.toml"), config)?;
+            
+            println!("Created new project `{name}`");
         }
     }
 
