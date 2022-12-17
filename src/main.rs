@@ -156,9 +156,10 @@ fn main() -> Result<()> {
             println!("Finished uploading {name}@{version}!");
         }
         Command::New(New { name }) => {
-            // Create folder
+            // Create folders
             std::fs::create_dir_all(format!("{name}/src"))?;
-
+            std::fs::create_dir_all(format!("{name}/.cargo"))?;
+            
             // Create Cargo.toml
             let metadata = template::CargoToml { name: name.clone() }.render_once()?;
             std::fs::write(format!("{name}/Cargo.toml"), metadata)?;
@@ -167,6 +168,10 @@ fn main() -> Result<()> {
             let main = template::LibRs.render_once()?;
             std::fs::write(format!("{name}/src/lib.rs"), main)?;
 
+            // Create config.toml
+            let config = template::ConfigToml.render_once()?;
+            std::fs::write(format!("{name}/.cargo/config.toml"), config)?;
+            
             println!("Created new project `{name}`");
         }
     }

@@ -15,6 +15,9 @@ pub mod template {
     #[template(path = "lib.rs")]
     pub struct LibRs;
     
+    #[derive(TemplateOnce)]
+    #[template(path = "config.toml")]
+    pub struct ConfigToml;
 }
 
 // Upload form
