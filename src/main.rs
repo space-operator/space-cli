@@ -2,7 +2,8 @@ use clap::{Parser, Subcommand};
 use dialoguer::{FuzzySelect, Input};
 use indicatif::ProgressBar;
 use platform_dirs::AppDirs;
-use space::{eyre, Config, Format, Result, StorageClient};
+use sailfish::TemplateOnce;
+use space::{eyre, template, Config, Format, Result, StorageClient};
 use std::{fs::File, io::Write, path::PathBuf, time::Duration};
 use titlecase::titlecase;
 use uuid::Uuid;
@@ -59,7 +60,7 @@ fn main() -> Result<()> {
         Command::Init => {
             // Get defaults
             let defaults = read_config().unwrap_or_default();
-            
+
             let endpoint = Input::<String>::new()
                 .with_prompt("Supabase")
                 .with_initial_text(defaults.endpoint)
@@ -69,21 +70,24 @@ fn main() -> Result<()> {
                 .with_prompt("Authorization")
                 .with_initial_text(defaults.authorization)
                 .interact_text()?;
-            
+
             // Create config file
             let config_file = config_path()?;
             let message = format!("Wrote settings to {}", config_file.display());
 
             // Serialize to toml
             let mut file = File::create(config_file)?;
-            let config = Config { endpoint, authorization };
+            let config = Config {
+                endpoint,
+                authorization,
+            };
             let toml = toml::to_string(&config)?;
 
             // Write to file
             file.write_all(toml.as_bytes())?;
             println!("{message}");
         }
-        Command::Upload(Upload { wasm, source_code}) => {
+        Command::Upload(Upload { wasm, source_code }) => {
             // Get config
             let config = read_config()?;
             let client = StorageClient::new(&config.endpoint, &config.authorization);
@@ -156,13 +160,15 @@ fn main() -> Result<()> {
             std::fs::create_dir_all(format!("{name}/src"))?;
 
             // Create Cargo.toml
-            std::fs::write(format!("{name}/Cargo.toml"), "[package]\n")?;
+            let metadata = template::CargoToml { name: name.clone() }.render_once()?;
+            std::fs::write(format!("{name}/Cargo.toml"), metadata)?;
 
             // Create lib.rs
-            std::fs::write(format!("{name}/src/lib.rs"), "fn main() {}\n")?;
-            
+            let main = template::LibRs.render_once()?;
+            std::fs::write(format!("{name}/src/lib.rs"), main)?;
+
             println!("Created new project `{name}`");
-        },
+        }
     }
 
     // Return success

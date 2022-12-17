@@ -1,6 +1,22 @@
 // Imports
 pub use color_eyre::eyre::{eyre, Result};
 
+// Templates
+pub mod template {
+    use sailfish::TemplateOnce;
+
+    #[derive(TemplateOnce)]
+    #[template(path = "Cargo.toml")]
+    pub struct CargoToml {
+        pub name: String,
+    }
+
+    #[derive(TemplateOnce)]
+    #[template(path = "lib.rs")]
+    pub struct LibRs;
+    
+}
+
 // Upload form
 use serde::{Deserialize, Serialize};
 
@@ -96,10 +112,10 @@ impl Format {
                 width: 150,
                 height: 125
                     + [targets.len(), sources.len()]
-                        .into_iter()
-                        .max()
-                        .unwrap_or(0)
-                        * 50,
+                    .into_iter()
+                    .max()
+                    .unwrap_or(0)
+                    * 50,
                 background_color: String::from("#ffd9b3"),
             },
             targets,
