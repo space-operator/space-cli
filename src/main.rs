@@ -18,6 +18,8 @@ struct Args {
 enum Command {
     /// Authenticate and store locally
     Init,
+    /// Create a new WASM project
+    New(New),
     /// Upload WASM node to Space Operator
     Upload(Upload),
 }
@@ -28,6 +30,12 @@ struct Upload {
     wasm: PathBuf,
     /// Path to sourceccode
     source_code: PathBuf,
+}
+
+#[derive(Parser)]
+struct New {
+    /// Project name
+    name: String,
 }
 
 fn config_path() -> Result<PathBuf> {
@@ -75,24 +83,23 @@ fn main() -> Result<()> {
             file.write_all(toml.as_bytes())?;
             println!("{message}");
         }
-        Command::Upload(upload) => {
+        Command::Upload(Upload { wasm, source_code}) => {
             // Get config
             let config = read_config()?;
             let client = StorageClient::new(&config.endpoint, &config.authorization);
 
             // Verify that web assembly exists
-            if !upload.wasm.exists() {
-                return Err(eyre!("{} doesn't exist", upload.wasm.display()));
+            if !wasm.exists() {
+                return Err(eyre!("{} doesn't exist", wasm.display()));
             }
 
             // Verify that source code exists
-            if !upload.source_code.exists() {
-                return Err(eyre!("{} doesn't exist", upload.source_code.display()));
+            if !source_code.exists() {
+                return Err(eyre!("{} doesn't exist", source_code.display()));
             }
 
             // Start dialogue
-            let suggested_name = upload
-                .wasm
+            let suggested_name = wasm
                 .file_stem()
                 .and_then(|it| it.to_str())
                 .unwrap_or_default();
@@ -126,14 +133,14 @@ fn main() -> Result<()> {
             spinner.enable_steady_tick(Duration::from_millis(10));
 
             // Web assembly
-            let wasm_name = upload.wasm.display();
-            let bytes = std::fs::read(&upload.wasm)?;
+            let wasm_name = wasm.display();
+            let bytes = std::fs::read(&wasm)?;
             let path = format!("{base_path}/{wasm_name}");
             client.from("node-files").upload(&path, &bytes)?;
 
             // Source code
-            let source_code_name = upload.source_code.display();
-            let bytes = std::fs::read(&upload.source_code)?;
+            let source_code_name = source_code.display();
+            let bytes = std::fs::read(&source_code)?;
             let path = format!("{base_path}/{source_code_name}");
             client.from("node-files").upload(&path, &bytes)?;
 
@@ -144,6 +151,18 @@ fn main() -> Result<()> {
             spinner.finish_and_clear();
             println!("Finished uploading {name}@{version}!");
         }
+        Command::New(New { name }) => {
+            // Create folder
+            std::fs::create_dir_all(format!("{name}/src"))?;
+
+            // Create Cargo.toml
+            std::fs::write(format!("{name}/Cargo.toml"), "[package]\n")?;
+
+            // Create lib.rs
+            std::fs::write(format!("{name}/src/lib.rs"), "fn main() {}\n")?;
+            
+            println!("Created new project `{name}`");
+        },
     }
 
     // Return success
