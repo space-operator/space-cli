@@ -3,13 +3,17 @@ name = "space"
 version = "0.1.0"
 edition = "2021"
 
+[profile.release]
+lto = true
+strip = true
+opt-level = "z"
+
 [dependencies]
 # User interface
 clap = { version = "4.0", features = ["derive"] }
 color-eyre = { version = "0.6", default-features = false }
 
 # Capitalization, progress bars, user input
-titlecase = "2.2"
 indicatif = "0.17"
 dialoguer = { version = "0.10", features = ["fuzzy-select"] }
 
@@ -21,12 +25,16 @@ serde = { version = "1.0", features = ["derive"] }
 ureq = "2.5"
 
 # Configuration
-toml = "0.5.9"
-platform-dirs = "0.3.0"
+toml = "0.5"
+platform-dirs = "0.3"
 
 # Guess mime type for path
-mime_guess = "2.0.4"
+mime_guess = "2.0"
 
 # Unique identifiers
 uuid = { version = "1.2", features = ["v4", "fast-rng"] }
-sailfish = "0.5.0"
+
+# Extremely fast templating
+sailfish = "0.5"
+glob = "0.3.0"
+duct = "0.13.6"

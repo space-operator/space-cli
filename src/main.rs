@@ -5,8 +5,8 @@ use platform_dirs::AppDirs;
 use sailfish::TemplateOnce;
 use space::{eyre, template, Config, Format, Result, StorageClient};
 use std::{fs::File, io::Write, path::PathBuf, time::Duration};
-use titlecase::titlecase;
 use uuid::Uuid;
+use glob::glob;
 
 #[derive(Parser)]
 struct Args {
@@ -21,15 +21,17 @@ enum Command {
     Init,
     /// Create a new WASM project
     New(New),
-    /// Upload WASM node to Space Operator
-    Upload(Upload),
+    /// Upload project
+    Upload,
+    /// Manually deploy WASM and source code to Space Operator
+    Deploy(Deploy),
 }
 
 #[derive(Parser)]
-struct Upload {
+struct Deploy {
     /// Path to WASM binary
     wasm: PathBuf,
-    /// Path to sourceccode
+    /// Path to source code
     source_code: PathBuf,
 }
 
@@ -87,74 +89,6 @@ fn main() -> Result<()> {
             file.write_all(toml.as_bytes())?;
             println!("{message}");
         }
-        Command::Upload(Upload { wasm, source_code }) => {
-            // Get config
-            let config = read_config()?;
-            let client = StorageClient::new(&config.endpoint, &config.authorization);
-
-            // Verify that web assembly exists
-            if !wasm.exists() {
-                return Err(eyre!("{} doesn't exist", wasm.display()));
-            }
-
-            // Verify that source code exists
-            if !source_code.exists() {
-                return Err(eyre!("{} doesn't exist", source_code.display()));
-            }
-
-            // Start dialogue
-            let suggested_name = wasm
-                .file_stem()
-                .and_then(|it| it.to_str())
-                .unwrap_or_default();
-
-            let name = Input::<String>::new()
-                .with_prompt("Name")
-                .with_initial_text(titlecase(suggested_name))
-                .interact_text()?;
-
-            let version = Input::<String>::new()
-                .with_prompt("Version")
-                .with_initial_text("0.1")
-                .interact_text()?;
-
-            let description = Input::<String>::new()
-                .with_prompt("Description")
-                .interact_text()?;
-
-            let inputs = read_list("input")?;
-            let outputs = read_list("output")?;
-
-            let format = Format::new(name.clone(), version.clone(), description, inputs, outputs);
-            let json = serde_json::to_string_pretty(&format)?;
-
-            // Unique identifier
-            let base_path = Uuid::new_v4();
-
-            // Upload the files
-            let spinner =
-                ProgressBar::new_spinner().with_message(format!("Uploading {name}@{version}..."));
-            spinner.enable_steady_tick(Duration::from_millis(10));
-
-            // Web assembly
-            let wasm_name = wasm.display();
-            let bytes = std::fs::read(&wasm)?;
-            let path = format!("{base_path}/{wasm_name}");
-            client.from("node-files").upload(&path, &bytes)?;
-
-            // Source code
-            let source_code_name = source_code.display();
-            let bytes = std::fs::read(&source_code)?;
-            let path = format!("{base_path}/{source_code_name}");
-            client.from("node-files").upload(&path, &bytes)?;
-
-            // JSON
-            let path = format!("{base_path}/space.json");
-            client.from("node-files").upload(&path, json.as_bytes())?;
-
-            spinner.finish_and_clear();
-            println!("Finished uploading {name}@{version}!");
-        }
         Command::New(New { name }) => {
             // Create folders
             std::fs::create_dir_all(format!("{name}/src"))?;
@@ -174,10 +108,47 @@ fn main() -> Result<()> {
             
             println!("Created new project `{name}`");
         }
+        Command::Upload => {
+            // Find root with Cargo.toml then change it
+            let directory = find_root(std::env::current_dir()?)?;
+            std::env::set_current_dir(directory)?;
+
+            // Build project in release mode
+            duct::cmd!("cargo", "build", "--release").run()?;
+
+            // Find the files then upload
+            let wasm = glob("target/wasm32-wasi/release/*.wasm")?.next().ok_or(eyre!("WASM not found"))??;
+            let source_code = PathBuf::from("src/lib.rs");
+            upload(wasm, source_code)?;
+        }
+        Command::Deploy(Deploy { wasm, source_code }) => upload(wasm, source_code)?,
     }
 
     // Return success
     Ok(())
+}
+
+fn titlecase(input: &str) -> String {
+    let mut chars = input.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(c) => c.to_uppercase().chain(chars.flat_map(|t| t.to_lowercase())).collect(),
+    }
+}
+
+fn find_root(mut current: PathBuf) -> Result<PathBuf> {
+    let file_exists = std::fs::read_dir(&current)?.any(|path| match path {
+        Ok(file) => file.file_name().to_string_lossy() == "Cargo.toml",
+        Err(_) => false,
+    });
+    
+    match file_exists {
+        true => Ok(current),
+        false => {
+            current.pop();
+            find_root(current)
+        },
+    }
 }
 
 fn read_list(prefix: &str) -> Result<Vec<(String, String)>> {
@@ -228,4 +199,75 @@ fn read_list(prefix: &str) -> Result<Vec<(String, String)>> {
         values.push((value, items[r#type].to_string()));
     }
     Ok(values)
+}
+
+fn upload(wasm: PathBuf, source_code: PathBuf) -> Result<()> {
+    // Get config
+    let config = read_config()?;
+    let client = StorageClient::new(&config.endpoint, &config.authorization);
+
+    // Verify that web assembly exists
+    if !wasm.exists() {
+        return Err(eyre!("{} doesn't exist", wasm.display()));
+    }
+
+    // Verify that source code exists
+    if !source_code.exists() {
+        return Err(eyre!("{} doesn't exist", source_code.display()));
+    }
+
+    // Start dialogue
+    let suggested_name = wasm
+        .file_stem()
+        .and_then(|it| it.to_str())
+        .unwrap_or_default();
+
+    let name = Input::<String>::new()
+        .with_prompt("Name")
+        .with_initial_text(titlecase(suggested_name))
+        .interact_text()?;
+
+    let version = Input::<String>::new()
+        .with_prompt("Version")
+        .with_initial_text("0.1")
+        .interact_text()?;
+
+    let description = Input::<String>::new()
+        .with_prompt("Description")
+        .interact_text()?;
+
+    let inputs = read_list("input")?;
+    let outputs = read_list("output")?;
+
+    let format = Format::new(name.clone(), version.clone(), description, inputs, outputs);
+    let json = serde_json::to_string_pretty(&format)?;
+
+    // Unique identifier
+    let base_path = Uuid::new_v4();
+
+    // Upload the files
+    let spinner =
+        ProgressBar::new_spinner().with_message(format!("Uploading {name}@{version}..."));
+    spinner.enable_steady_tick(Duration::from_millis(10));
+
+    // Web assembly
+    let wasm_name = wasm.display();
+    let bytes = std::fs::read(&wasm)?;
+    let path = format!("{base_path}/{wasm_name}");
+    client.from("node-files").upload(&path, &bytes)?;
+
+    // Source code
+    let source_code_name = source_code.display();
+    let bytes = std::fs::read(&source_code)?;
+    let path = format!("{base_path}/{source_code_name}");
+    client.from("node-files").upload(&path, &bytes)?;
+
+    // JSON
+    let path = format!("{base_path}/space.json");
+    client.from("node-files").upload(&path, json.as_bytes())?;
+
+    spinner.finish_and_clear();
+    println!("Finished uploading {name}@{version}!");
+    
+    Ok(())
 }
