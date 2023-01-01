@@ -53,7 +53,8 @@ fn read_config() -> Result<Config> {
     Ok(toml::from_str(&raw)?)
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     color_eyre::install()?;
     let args = Args::parse();
 
@@ -119,9 +120,9 @@ fn main() -> Result<()> {
             // Find the files then upload
             let wasm = glob("target/wasm32-wasi/release/*.wasm")?.next().ok_or(eyre!("WASM not found"))??;
             let source_code = PathBuf::from("src/lib.rs");
-            upload(wasm, source_code)?;
+            upload(wasm, source_code).await?;
         }
-        Command::Deploy(Deploy { wasm, source_code }) => upload(wasm, source_code)?,
+        Command::Deploy(Deploy { wasm, source_code }) => upload(wasm, source_code).await?,
     }
 
     // Return success
@@ -201,7 +202,7 @@ fn read_list(prefix: &str) -> Result<Vec<(String, String)>> {
     Ok(values)
 }
 
-fn upload(wasm: PathBuf, source_code: PathBuf) -> Result<()> {
+async fn upload(wasm: PathBuf, source_code: PathBuf) -> Result<()> {
     // Get config
     let config = read_config()?;
     let client = StorageClient::new(&config.endpoint, &config.authorization);
@@ -254,17 +255,17 @@ fn upload(wasm: PathBuf, source_code: PathBuf) -> Result<()> {
     let wasm_name = wasm.display();
     let bytes = std::fs::read(&wasm)?;
     let path = format!("{base_path}/{wasm_name}");
-    client.from("node-files").upload(&path, &bytes)?;
+    client.from("node-files").upload(&path, bytes).await?;
 
     // Source code
     let source_code_name = source_code.display();
     let bytes = std::fs::read(&source_code)?;
     let path = format!("{base_path}/{source_code_name}");
-    client.from("node-files").upload(&path, &bytes)?;
+    client.from("node-files").upload(&path, bytes).await?;
 
     // JSON
     let path = format!("{base_path}/space.json");
-    client.from("node-files").upload(&path, json.as_bytes())?;
+    client.from("node-files").upload(&path, json.into_bytes()).await?;
 
     spinner.finish_and_clear();
     println!("Finished uploading {name}@{version}!");

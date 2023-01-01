@@ -161,13 +161,16 @@ pub struct StorageBuilder<'a> {
 
 impl StorageBuilder<'_> {
     /// Upload file from path
-    pub fn upload(self, path: &str, bytes: &[u8]) -> Result<()> {
+    pub async fn upload(self, path: &str, bytes: Vec<u8>) -> Result<()> {
         let url = format!("{}/object/{}/{}", self.config.endpoint, self.bucket, path);
         let mime_type = mime_guess::from_path(path).first_or_octet_stream();
-        ureq::post(&url)
-            .set("Authorization", &format!("Bearer {}", self.config.authorization))
-            .set("Content-Type", mime_type.essence_str())
-            .send_bytes(bytes)?;
+        let client = reqwest::Client::new();
+        client.post(&url)
+            .header("Authorization", &format!("Bearer {}", self.config.authorization))
+            .header("Content-Type", mime_type.essence_str())
+            .body(bytes)
+            .send()
+            .await?;
         Ok(())
     }
 }
