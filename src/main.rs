@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use dialoguer::{FuzzySelect, Input};
 use indicatif::ProgressBar;
 use platform_dirs::AppDirs;
+use postgrest::Postgrest;
 use sailfish::TemplateOnce;
 use space::{eyre, template, Config, Format, Result, StorageClient};
 use std::{fs::File, io::Write, path::PathBuf, time::Duration};
@@ -19,6 +20,8 @@ struct Args {
 enum Command {
     /// Authenticate and store locally
     Init,
+    /// Get user id
+    Id,
     /// Create a new WASM project
     New(New),
     /// Upload project
@@ -83,6 +86,7 @@ async fn main() -> Result<()> {
             let config = Config {
                 endpoint,
                 authorization,
+                ..Default::default()
             };
             let toml = toml::to_string(&config)?;
 
@@ -121,6 +125,18 @@ async fn main() -> Result<()> {
             let wasm = glob("target/wasm32-wasi/release/*.wasm")?.next().ok_or(eyre!("WASM not found"))??;
             let source_code = PathBuf::from("src/lib.rs");
             upload(wasm, source_code).await?;
+        }
+        Command::Id => {
+            let config = read_config().unwrap_or_default();
+            let client = Postgrest::new("https://hyjboblkjeevkzaqsyxe.supabase.co/rest/v1")
+                .insert_header("apikey", config.apikey)
+                .insert_header("authorization", config.authorization);
+            let response = client
+                .from("users_public")
+                .select("*")
+                .execute()
+                .await?;
+            println!("{:#?}", &response.text().await);
         }
         Command::Deploy(Deploy { wasm, source_code }) => upload(wasm, source_code).await?,
     }

@@ -23,10 +23,21 @@ pub mod template {
 // Upload form
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize)]
 pub struct Config {
+    pub apikey: String,
     pub endpoint: String,
     pub authorization: String,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            apikey: String::from("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh5amJvYmxramVldmt6YXFzeXhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NTQwMTEyNTgsImV4cCI6MTk2OTU4NzI1OH0.L20s98fiTqfPWyTTSe-zjgoovQYhkJGKE7K8h9_-drY"),
+            endpoint: String::from("https://hyjboblkjeevkzaqsyxe.supabase.co"),
+            authorization: String::default(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -166,7 +177,7 @@ impl StorageBuilder<'_> {
         let mime_type = mime_guess::from_path(path).first_or_octet_stream();
         let client = reqwest::Client::new();
         client.post(&url)
-            .header("Authorization", &format!("Bearer {}", self.config.authorization))
+            .header("Authorization", &self.config.authorization)
             .header("Content-Type", mime_type.essence_str())
             .body(bytes)
             .send()
@@ -174,3 +185,4 @@ impl StorageBuilder<'_> {
         Ok(())
     }
 }
+
