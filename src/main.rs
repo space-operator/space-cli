@@ -1,13 +1,13 @@
 use clap::{Parser, Subcommand};
 use dialoguer::{FuzzySelect, Input};
+use glob::glob;
 use indicatif::ProgressBar;
 use platform_dirs::AppDirs;
 use postgrest::Postgrest;
 use sailfish::TemplateOnce;
-use space::{eyre, template, Config, Format, Result, StorageClient, Node};
+use space::{eyre, template, Config, Format, Node, Result, StorageClient};
 use std::{fs::File, io::Write, path::PathBuf, time::Duration};
 use uuid::Uuid;
-use glob::glob;
 
 #[derive(Parser)]
 struct Args {
@@ -72,7 +72,7 @@ async fn main() -> Result<()> {
 
             let authorization = Input::<String>::new()
                 .with_prompt("Authorization")
-                .with_initial_text(defaults.authorization)
+                .report(false)
                 .interact_text()?;
 
             // Create config file
@@ -96,7 +96,7 @@ async fn main() -> Result<()> {
             // Create folders
             std::fs::create_dir_all(format!("{name}/src"))?;
             std::fs::create_dir_all(format!("{name}/.cargo"))?;
-            
+
             // Create Cargo.toml
             let metadata = template::CargoToml { name: name.clone() }.render_once()?;
             std::fs::write(format!("{name}/Cargo.toml"), metadata)?;
@@ -108,7 +108,7 @@ async fn main() -> Result<()> {
             // Create config.toml
             let config = template::ConfigToml.render_once()?;
             std::fs::write(format!("{name}/.cargo/config.toml"), config)?;
-            
+
             println!("Created new project `{name}`");
         }
         Command::Upload => {
@@ -120,7 +120,9 @@ async fn main() -> Result<()> {
             duct::cmd!("cargo", "build", "--release").run()?;
 
             // Find the files then upload
-            let wasm = glob("target/wasm32-wasi/release/*.wasm")?.next().ok_or(eyre!("WASM not found"))??;
+            let wasm = glob("target/wasm32-wasi/release/*.wasm")?
+                .next()
+                .ok_or(eyre!("WASM not found"))??;
             let source_code = PathBuf::from("src/lib.rs");
             upload(wasm, source_code).await?;
         }
@@ -135,7 +137,10 @@ fn titlecase(input: &str) -> String {
     let mut chars = input.chars();
     match chars.next() {
         None => String::new(),
-        Some(c) => c.to_uppercase().chain(chars.flat_map(|t| t.to_lowercase())).collect(),
+        Some(c) => c
+            .to_uppercase()
+            .chain(chars.flat_map(|t| t.to_lowercase()))
+            .collect(),
     }
 }
 
@@ -144,13 +149,13 @@ fn find_root(mut current: PathBuf) -> Result<PathBuf> {
         Ok(file) => file.file_name().to_string_lossy() == "Cargo.toml",
         Err(_) => false,
     });
-    
+
     match file_exists {
         true => Ok(current),
         false => {
             current.pop();
             find_root(current)
-        },
+        }
     }
 }
 
@@ -249,39 +254,53 @@ async fn upload(wasm: PathBuf, source_code: PathBuf) -> Result<()> {
     let base_path = Uuid::new_v4();
 
     // Upload the files
-    let spinner =
-        ProgressBar::new_spinner().with_message(format!("Uploading {name}@{version}..."));
+    let spinner = ProgressBar::new_spinner().with_message(format!("Uploading {name}@{version}..."));
     spinner.enable_steady_tick(Duration::from_millis(10));
 
     // Web assembly
-    let wasm_name = wasm.display();
+    let wasm_name = wasm
+        .file_name()
+        .and_then(|it| it.to_str())
+        .ok_or(eyre!("Invalid WASM path"))?;
     let bytes = std::fs::read(&wasm)?;
-    let path = format!("{base_path}/{wasm_name}");
-    client.from("node-files").upload(&path, bytes).await?;
+    let storage_path = format!("{base_path}/{wasm_name}");
+    client
+        .from("node-files")
+        .upload(&storage_path, bytes)
+        .await?;
 
     // Source code
-    let source_code_name = source_code.display();
+    let source_code_name = source_code
+        .file_name()
+        .and_then(|it| it.to_str())
+        .ok_or(eyre!("Invalid source code path"))?;
     let bytes = std::fs::read(&source_code)?;
-    let path = format!("{base_path}/{source_code_name}");
-    client.from("node-files").upload(&path, bytes).await?;
+    let source_code = format!("{base_path}/{source_code_name}");
+    client
+        .from("node-files")
+        .upload(&source_code, bytes)
+        .await?;
 
     // JSON
     let path = format!("{base_path}/space.json");
-    client.from("node-files").upload(&path, json.into_bytes()).await?;
+    client
+        .from("node-files")
+        .upload(&path, json.into_bytes())
+        .await?;
 
     // Insert into database
     let client = Postgrest::new(format!("{}/rest/v1", config.endpoint))
         .insert_header("apikey", config.apikey)
         .insert_header("authorization", config.authorization);
-    let node = Node::from_format(name.clone(), format);
+    let node = Node::new(name.clone(), storage_path, source_code, format);
     client
         .from("nodes")
         .insert(serde_json::to_string(&node)?)
         .execute()
         .await?;
-    
+
     spinner.finish_and_clear();
     println!("Finished uploading {name}@{version}!");
-    
+
     Ok(())
 }

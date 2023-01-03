@@ -148,17 +148,27 @@ pub struct Node {
     r#type: Type,
     sources: Vec<Source>,
     targets: Vec<Target>,
+    unique_node_id: String,
     data: Data,
+    #[serde(rename = "isPublic")]
+    is_public: bool,
+    storage_path: String,
+    source_code: String,
 }
 
 impl Node {
-    pub fn from_format(name: String, format: Format) -> Self {
+    pub fn new(name: String, storage_path: String, source_code: String, format: Format) -> Self {
+        let lowercase = name.to_lowercase();
         Self {
             name,
             r#type: format.r#type,
             sources: format.sources,
             targets: format.targets,
+            unique_node_id: format!("{}.{}", lowercase, format.data.version),
             data: format.data,
+            is_public: true,
+            storage_path,
+            source_code,
         }
     }
 }
