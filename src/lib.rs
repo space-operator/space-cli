@@ -142,6 +142,27 @@ impl Format {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Node {
+    name: String,
+    r#type: Type,
+    sources: Vec<Source>,
+    targets: Vec<Target>,
+    data: Data,
+}
+
+impl Node {
+    pub fn from_format(name: String, format: Format) -> Self {
+        Self {
+            name,
+            r#type: format.r#type,
+            sources: format.sources,
+            targets: format.targets,
+            data: format.data,
+        }
+    }
+}
+
 pub struct StorageClient {
     endpoint: String,
     authorization: String,

@@ -4,7 +4,7 @@ use indicatif::ProgressBar;
 use platform_dirs::AppDirs;
 use postgrest::Postgrest;
 use sailfish::TemplateOnce;
-use space::{eyre, template, Config, Format, Result, StorageClient};
+use space::{eyre, template, Config, Format, Result, StorageClient, Node};
 use std::{fs::File, io::Write, path::PathBuf, time::Duration};
 use uuid::Uuid;
 use glob::glob;
@@ -20,8 +20,6 @@ struct Args {
 enum Command {
     /// Authenticate and store locally
     Init,
-    /// Get user id
-    Id,
     /// Create a new WASM project
     New(New),
     /// Upload project
@@ -125,18 +123,6 @@ async fn main() -> Result<()> {
             let wasm = glob("target/wasm32-wasi/release/*.wasm")?.next().ok_or(eyre!("WASM not found"))??;
             let source_code = PathBuf::from("src/lib.rs");
             upload(wasm, source_code).await?;
-        }
-        Command::Id => {
-            let config = read_config().unwrap_or_default();
-            let client = Postgrest::new("https://hyjboblkjeevkzaqsyxe.supabase.co/rest/v1")
-                .insert_header("apikey", config.apikey)
-                .insert_header("authorization", config.authorization);
-            let response = client
-                .from("users_public")
-                .select("*")
-                .execute()
-                .await?;
-            println!("{:#?}", &response.text().await);
         }
         Command::Deploy(Deploy { wasm, source_code }) => upload(wasm, source_code).await?,
     }
@@ -283,6 +269,17 @@ async fn upload(wasm: PathBuf, source_code: PathBuf) -> Result<()> {
     let path = format!("{base_path}/space.json");
     client.from("node-files").upload(&path, json.into_bytes()).await?;
 
+    // Insert into database
+    let client = Postgrest::new(format!("{}/rest/v1", config.endpoint))
+        .insert_header("apikey", config.apikey)
+        .insert_header("authorization", config.authorization);
+    let node = Node::from_format(name.clone(), format);
+    client
+        .from("nodes")
+        .insert(serde_json::to_string(&node)?)
+        .execute()
+        .await?;
+    
     spinner.finish_and_clear();
     println!("Finished uploading {name}@{version}!");
     
