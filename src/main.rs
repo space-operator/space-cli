@@ -22,7 +22,7 @@ enum Command {
     Init,
     /// Create a new WASM project
     New(New),
-    /// Upload Rust project to Space Operator
+    /// Upload WASM project to Space Operator
     Upload,
     /// Generate JSON from dialogue
     Generate,
