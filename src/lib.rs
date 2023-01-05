@@ -40,50 +40,50 @@ impl Default for Config {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum Type {
     #[serde(rename = "WASM")]
     Wasm,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Data {
-    node_id: String,
-    version: String,
-    display_name: String,
-    description: String,
-    width: usize,
-    height: usize,
+    pub node_id: String,
+    pub version: String,
+    pub display_name: String,
+    pub description: String,
+    pub width: usize,
+    pub height: usize,
     #[serde(rename = "backgroundColor")]
-    background_color: String,
+    pub background_color: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Target {
-    name: String,
-    type_bounds: Vec<String>,
-    required: bool,
+    pub name: String,
+    pub type_bounds: Vec<String>,
+    pub required: bool,
     #[serde(rename = "defaultValue")]
-    default_value: String,
-    tooltip: String,
-    passthrough: bool,
+    pub default_value: String,
+    pub tooltip: String,
+    pub passthrough: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Source {
-    name: String,
-    r#type: String,
+    pub name: String,
+    pub r#type: String,
     #[serde(rename = "defaultValue")]
-    default_value: String,
-    tooltip: String,
+    pub default_value: String,
+    pub tooltip: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Format {
-    r#type: Type,
-    data: Data,
-    targets: Vec<Target>,
-    sources: Vec<Source>,
+    pub r#type: Type,
+    pub data: Data,
+    pub targets: Vec<Target>,
+    pub sources: Vec<Source>,
 }
 
 impl Format {
@@ -144,16 +144,16 @@ impl Format {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Node {
-    name: String,
-    r#type: Type,
-    sources: Vec<Source>,
-    targets: Vec<Target>,
-    unique_node_id: String,
-    data: Data,
+    pub name: String,
+    pub r#type: Type,
+    pub sources: Vec<Source>,
+    pub targets: Vec<Target>,
+    pub unique_node_id: String,
+    pub data: Data,
     #[serde(rename = "isPublic")]
-    is_public: bool,
-    storage_path: String,
-    source_code: String,
+    pub is_public: bool,
+    pub storage_path: String,
+    pub source_code: String,
 }
 
 impl Node {

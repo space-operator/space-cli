@@ -22,8 +22,10 @@ enum Command {
     Init,
     /// Create a new WASM project
     New(New),
-    /// Upload project
+    /// Upload Rust project to Space Operator
     Upload,
+    /// Generate JSON from dialogue
+    Generate,
     /// Manually deploy WASM and source code to Space Operator
     Deploy(Deploy),
 }
@@ -124,9 +126,15 @@ async fn main() -> Result<()> {
                 .next()
                 .ok_or(eyre!("WASM not found"))??;
             let source_code = PathBuf::from("src/lib.rs");
-            upload(wasm, source_code).await?;
+            let cargo_toml = PathBuf::from("Cargo.toml");
+            upload(wasm, source_code, Some(cargo_toml)).await?;
         }
-        Command::Deploy(Deploy { wasm, source_code }) => upload(wasm, source_code).await?,
+        Command::Deploy(Deploy { wasm, source_code }) => upload(wasm, source_code, None).await?,
+        Command::Generate => {
+            let format = read_format(None)?;
+            let json = serde_json::to_string_pretty(&format)?;
+            println!("{json}");
+        }
     }
 
     // Return success
@@ -209,30 +217,20 @@ fn read_list(prefix: &str) -> Result<Vec<(String, String)>> {
     Ok(values)
 }
 
-async fn upload(wasm: PathBuf, source_code: PathBuf) -> Result<()> {
-    // Get config
-    let config = read_config()?;
-    let client = StorageClient::new(&config.endpoint, &config.authorization);
-
-    // Verify that web assembly exists
-    if !wasm.exists() {
-        return Err(eyre!("{} doesn't exist", wasm.display()));
-    }
-
-    // Verify that source code exists
-    if !source_code.exists() {
-        return Err(eyre!("{} doesn't exist", source_code.display()));
-    }
-
+fn read_format(wasm: Option<&PathBuf>) -> Result<Format> {
     // Start dialogue
-    let suggested_name = wasm
-        .file_stem()
-        .and_then(|it| it.to_str())
-        .unwrap_or_default();
+    let suggested_name = match wasm {
+        Some(path) => path
+            .file_stem()
+            .and_then(|it| it.to_str())
+            .unwrap_or_default()
+            .to_string(),
+        None => String::new(),
+    };
 
     let name = Input::<String>::new()
         .with_prompt("Name")
-        .with_initial_text(titlecase(suggested_name))
+        .with_initial_text(titlecase(&suggested_name))
         .interact_text()?;
 
     let version = Input::<String>::new()
@@ -247,14 +245,48 @@ async fn upload(wasm: PathBuf, source_code: PathBuf) -> Result<()> {
     let inputs = read_list("input")?;
     let outputs = read_list("output")?;
 
-    let format = Format::new(name.clone(), version.clone(), description, inputs, outputs);
-    let json = serde_json::to_string_pretty(&format)?;
+    Ok(Format::new(
+        name.clone(),
+        version.clone(),
+        description,
+        inputs,
+        outputs,
+    ))
+}
+
+async fn upload(wasm: PathBuf, source_code: PathBuf, cargo_toml: Option<PathBuf>) -> Result<()> {
+    // Get config
+    let config = read_config()?;
+    let client = StorageClient::new(&config.endpoint, &config.authorization);
+
+    // Verify that web assembly exists
+    if !wasm.exists() {
+        return Err(eyre!("{} doesn't exist", wasm.display()));
+    }
+
+    // Verify that source code exists
+    if !source_code.exists() {
+        return Err(eyre!("{} doesn't exist", source_code.display()));
+    }
+
+    if let Some(ref cargo_toml) = cargo_toml {
+        if !cargo_toml.exists() {
+            return Err(eyre!("{} doesn't exist", cargo_toml.display()));
+        }
+    }
 
     // Unique identifier
     let base_path = Uuid::new_v4();
 
+    // Get json from dialogue
+    let format = read_format(Some(&wasm))?;
+    let json = serde_json::to_string_pretty(&format)?;
+
     // Upload the files
-    let spinner = ProgressBar::new_spinner().with_message(format!("Uploading {name}@{version}..."));
+    let spinner = ProgressBar::new_spinner().with_message(format!(
+        "Uploading {}@{}...",
+        format.data.display_name, format.data.version
+    ));
     spinner.enable_steady_tick(Duration::from_millis(10));
 
     // Web assembly
@@ -282,17 +314,24 @@ async fn upload(wasm: PathBuf, source_code: PathBuf) -> Result<()> {
         .await?;
 
     // JSON
-    let path = format!("{base_path}/space.json");
+    let path = format!("{base_path}/{}.json", format.data.display_name.to_lowercase().replace(" ", "_"));
     client
         .from("node-files")
         .upload(&path, json.into_bytes())
         .await?;
 
+    // Cargo.toml
+    if let Some(ref cargo_toml) = cargo_toml {
+        let bytes = std::fs::read(&cargo_toml)?;
+        let path = format!("{base_path}/Cargo.toml");
+        client.from("node-files").upload(&path, bytes).await?;
+    }
+
     // Insert into database
     let client = Postgrest::new(format!("{}/rest/v1", config.endpoint))
         .insert_header("apikey", config.apikey)
         .insert_header("authorization", config.authorization);
-    let node = Node::new(name.clone(), storage_path, source_code, format);
+    let node = Node::new(format.data.display_name.clone(), storage_path, source_code, format.clone());
     client
         .from("nodes")
         .insert(serde_json::to_string(&node)?)
@@ -300,7 +339,7 @@ async fn upload(wasm: PathBuf, source_code: PathBuf) -> Result<()> {
         .await?;
 
     spinner.finish_and_clear();
-    println!("Finished uploading {name}@{version}!");
+    println!("Finished uploading {}@{}!", format.data.display_name, format.data.version);
 
     Ok(())
 }
