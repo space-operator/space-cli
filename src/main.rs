@@ -119,7 +119,7 @@ async fn main() -> Result<()> {
             std::env::set_current_dir(directory)?;
 
             // Build project in release mode
-            duct::cmd!("cargo", "build", "--release").run()?;
+            duct::cmd!("cargo", "build", "--release", "--target", "wasm32-wasi").run()?;
 
             // Find the files then upload
             let wasm = glob("target/wasm32-wasi/release/*.wasm")?
