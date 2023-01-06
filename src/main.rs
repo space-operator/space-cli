@@ -209,6 +209,7 @@ fn read_list(prefix: &str) -> Result<Vec<(String, String)>> {
         let r#type = FuzzySelect::new()
             .items(&items)
             .with_prompt(format!("Type for {value}"))
+            .default(0)
             .report(false)
             .interact()?;
 
@@ -282,6 +283,21 @@ async fn upload(wasm: PathBuf, source_code: PathBuf, cargo_toml: Option<PathBuf>
     let format = read_format(Some(&wasm))?;
     let json = serde_json::to_string_pretty(&format)?;
 
+    // Ask other questions related to public/private and license
+    let items = vec![
+        "true",
+        "false"
+    ];
+    
+    let index = FuzzySelect::new()
+        .items(&items)
+        .with_prompt(format!("Public"))
+        .default(0)
+        .report(false)
+        .interact()?;
+    let is_public = items[index].parse::<bool>()?;
+    println!("Public: {is_public}");
+    
     // Upload the files
     let spinner = ProgressBar::new_spinner().with_message(format!(
         "Uploading {}@{}...",
@@ -331,7 +347,7 @@ async fn upload(wasm: PathBuf, source_code: PathBuf, cargo_toml: Option<PathBuf>
     let client = Postgrest::new(format!("{}/rest/v1", config.endpoint))
         .insert_header("apikey", config.apikey)
         .insert_header("authorization", config.authorization);
-    let node = Node::new(format.data.display_name.clone(), storage_path, source_code, format.clone());
+    let node = Node::new(format.data.display_name.clone(), storage_path, source_code, format.clone(), is_public);
     client
         .from("nodes")
         .insert(serde_json::to_string(&node)?)

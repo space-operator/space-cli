@@ -157,7 +157,7 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(name: String, storage_path: String, source_code: String, format: Format) -> Self {
+    pub fn new(name: String, storage_path: String, source_code: String, format: Format, is_public: bool) -> Self {
         let lowercase = name.to_lowercase();
         Self {
             name,
@@ -166,7 +166,7 @@ impl Node {
             targets: format.targets,
             unique_node_id: format!("{}.{}", lowercase, format.data.version),
             data: format.data,
-            is_public: true,
+            is_public,
             storage_path,
             source_code,
         }
