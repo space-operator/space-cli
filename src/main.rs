@@ -67,13 +67,8 @@ async fn main() -> Result<()> {
             // Get defaults
             let defaults = read_config().unwrap_or_default();
 
-            let endpoint = Input::<String>::new()
-                .with_prompt("Supabase")
-                .with_initial_text(defaults.endpoint)
-                .interact_text()?;
-
             let authorization = Input::<String>::new()
-                .with_prompt("Authorization")
+                .with_prompt("Authorization token")
                 .report(false)
                 .interact_text()?;
 
@@ -84,9 +79,10 @@ async fn main() -> Result<()> {
             // Serialize to toml
             let mut file = File::create(config_file)?;
             let config = Config {
-                endpoint,
+                apikey: defaults.apikey,
+                endpoint: defaults.endpoint,
                 authorization,
-                ..Default::default()
+                
             };
             let toml = toml::to_string(&config)?;
 
