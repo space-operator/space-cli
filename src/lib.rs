@@ -200,6 +200,13 @@ impl Node {
     }
 }
 
+// Project type
+pub enum Language {
+    Zig,
+    Rust,
+}
+
+// Storage client
 pub struct StorageClient {
     endpoint: String,
     authorization: String,

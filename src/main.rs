@@ -5,8 +5,8 @@ use indicatif::ProgressBar;
 use platform_dirs::AppDirs;
 use postgrest::Postgrest;
 use sailfish::TemplateOnce;
-use space::{eyre, template, Config, Format, Node, Result, StorageClient};
-use std::{fs::File, io::Write, path::PathBuf, time::Duration};
+use space::{eyre, template, Config, Format, Node, Result, StorageClient, Language};
+use std::{fs::File, io::Write, path::PathBuf, time::Duration, borrow::Cow};
 use uuid::Uuid;
 
 #[derive(Parser)]
@@ -18,7 +18,7 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Authenticate and store locally
+    /// Authenticate and store token locally
     Init,
     /// Create a new WASM project
     New(New),
@@ -26,12 +26,12 @@ enum Command {
     Upload,
     /// Generate JSON from dialogue
     Generate,
-    /// Manually deploy WASM and source code to Space Operator
-    Deploy(Deploy),
+    /// Manually upload WASM, source code and json to Space Operator
+    Manual(Manual),
 }
 
 #[derive(Parser)]
-struct Deploy {
+struct Manual {
     /// Path to WASM binary
     wasm: PathBuf,
     /// Path to source code
@@ -90,21 +90,48 @@ async fn main() -> Result<()> {
             println!("{message}");
         }
         Command::New(New { name }) => {
-            // Create folders
-            std::fs::create_dir_all(format!("{name}/src"))?;
-            std::fs::create_dir_all(format!("{name}/.cargo"))?;
+            // Ask for language
+            let languages = vec!["rust", "zig"];
 
-            // Create Cargo.toml
-            let metadata = template::CargoToml { name: name.clone() }.render_once()?;
-            std::fs::write(format!("{name}/Cargo.toml"), metadata)?;
+            let index = FuzzySelect::new()
+                .items(&languages)
+                .with_prompt("Language")
+                .default(0)
+                .report(false)
+                .interact()?;
 
-            // Create lib.rs
-            let main = template::LibRs.render_once()?;
-            std::fs::write(format!("{name}/src/lib.rs"), main)?;
+            match languages[index] {
+                "rust" => {
+                    // Create folders
+                    std::fs::create_dir_all(format!("{name}/src"))?;
+                    std::fs::create_dir_all(format!("{name}/.cargo"))?;
 
-            // Create config.toml
-            let config = template::ConfigToml.render_once()?;
-            std::fs::write(format!("{name}/.cargo/config.toml"), config)?;
+                    // Create Cargo.toml
+                    let metadata = template::CargoToml { name: name.clone() }.render_once()?;
+                    std::fs::write(format!("{name}/Cargo.toml"), metadata)?;
+
+                    // Create lib.rs
+                    let main = template::LibRs.render_once()?;
+                    std::fs::write(format!("{name}/src/lib.rs"), main)?;
+
+                    // Create config.toml
+                    let config = template::ConfigToml.render_once()?;
+                    std::fs::write(format!("{name}/.cargo/config.toml"), config)?;
+                }
+                "zig" => {
+                    // Create folders
+                    std::fs::create_dir_all(format!("{name}/src"))?;
+
+                    // Create main.zig
+                    let main = template::MainZig.render_once()?;
+                    std::fs::write(format!("{name}/src/main.zig"), main)?;
+
+                    // Create build.zig
+                    let build = template::BuildZig { name: name.clone() }.render_once()?;
+                    std::fs::write(format!("{name}/build.zig"), build)?;
+                },
+                _ => return Err(eyre!("Invalid language chosen")),
+            }
 
             println!("Created new project `{name}`");
         }
@@ -124,7 +151,7 @@ async fn main() -> Result<()> {
             let cargo_toml = PathBuf::from("Cargo.toml");
             upload(wasm, source_code, Some(cargo_toml)).await?;
         }
-        Command::Deploy(Deploy { wasm, source_code }) => upload(wasm, source_code, None).await?,
+        Command::Manual(Manual { wasm, source_code }) => upload(wasm, source_code, None).await?,
         Command::Generate => {
             let format = read_format(None)?;
             let json = serde_json::to_string_pretty(&format)?;
@@ -156,10 +183,24 @@ fn find_root(mut current: PathBuf) -> Result<PathBuf> {
     match file_exists {
         true => Ok(current),
         false => {
+            if current == PathBuf::from("/") {
+                return Err(eyre!("Project root not found"));
+            }
             current.pop();
             find_root(current)
         }
     }
+}
+
+fn find_language(current: PathBuf) -> Result<Language> {
+    for entry in std::fs::read_dir(&current)? {
+        match entry?.file_name().to_string_lossy() {
+            Cow::Borrowed("Cargo.toml") => return Ok(Language::Rust),
+            Cow::Borrowed("build.zig") => return Ok(Language::Zig),
+            _ => continue,
+        }
+    }
+    Err(eyre!("Language not found"))
 }
 
 fn read_list(prefix: &str) -> Result<Vec<(String, String)>> {
@@ -391,7 +432,10 @@ async fn upload(wasm: PathBuf, source_code: PathBuf, cargo_toml: Option<PathBuf>
     );
 
     // Open with browser
-    open::that(format!("https://spaceoperator.com/dashboard/nodes/{}", node.unique_node_id))?;
+    open::that(format!(
+        "https://spaceoperator.com/dashboard/nodes/{}",
+        node.unique_node_id
+    ))?;
 
     Ok(())
 }
