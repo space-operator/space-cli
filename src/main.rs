@@ -5,8 +5,8 @@ use indicatif::ProgressBar;
 use platform_dirs::AppDirs;
 use postgrest::Postgrest;
 use sailfish::TemplateOnce;
-use space::{eyre, template, Config, Format, Node, Result, StorageClient, Language};
-use std::{fs::File, io::Write, path::PathBuf, time::Duration, borrow::Cow};
+use space::{eyre, template, Config, Format, Language, Node, Result, StorageClient};
+use std::{borrow::Cow, fs::File, io::Write, path::PathBuf, time::Duration};
 use uuid::Uuid;
 
 #[derive(Parser)]
@@ -129,29 +129,45 @@ async fn main() -> Result<()> {
                     // Create build.zig
                     let build = template::BuildZig { name: name.clone() }.render_once()?;
                     std::fs::write(format!("{name}/build.zig"), build)?;
-                },
+                }
                 _ => return Err(eyre!("Invalid language chosen")),
             }
 
             println!("Created new project `{name}`");
         }
         Command::Upload => {
-            // Find root with Cargo.toml then change it
+            // Find root config file then change it
             let directory = find_root(std::env::current_dir()?)?;
             std::env::set_current_dir(directory)?;
+            let language = find_language(std::env::current_dir()?)?;
 
-            // Build project in release mode
-            duct::cmd!("cargo", "build", "--release", "--target", "wasm32-wasi").run()?;
+            // Upload based on language
+            match language {
+                Language::Zig => {
+                    // Build project in release mode
+                    duct::cmd!("zig", "build").run()?;
 
-            // Find the files then upload
-            let wasm = glob("target/wasm32-wasi/release/*.wasm")?
-                .next()
-                .ok_or(eyre!("WASM not found"))??;
-            let source_code = PathBuf::from("src/lib.rs");
-            let cargo_toml = PathBuf::from("Cargo.toml");
-            upload(wasm, source_code, Some(cargo_toml)).await?;
+                    // Find the files then upload
+                    let wasm = glob("zig-out/lib/*.wasm")?
+                        .next()
+                        .ok_or(eyre!("WASM not found"))??;
+                    let source_code = PathBuf::from("src/main.zig");
+                    upload(wasm, source_code).await?;
+                }
+                Language::Rust => {
+                    // Build project in release mode
+                    duct::cmd!("cargo", "build", "--release", "--target", "wasm32-wasi").run()?;
+
+                    // Find the files then upload
+                    let wasm = glob("target/wasm32-wasi/release/*.wasm")?
+                        .next()
+                        .ok_or(eyre!("WASM not found"))??;
+                    let source_code = PathBuf::from("src/lib.rs");
+                    upload(wasm, source_code).await?;
+                }
+            };
         }
-        Command::Manual(Manual { wasm, source_code }) => upload(wasm, source_code, None).await?,
+        Command::Manual(Manual { wasm, source_code }) => upload(wasm, source_code).await?,
         Command::Generate => {
             let format = read_format(None)?;
             let json = serde_json::to_string_pretty(&format)?;
@@ -163,20 +179,12 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn titlecase(input: &str) -> String {
-    let mut chars = input.chars();
-    match chars.next() {
-        None => String::new(),
-        Some(c) => c
-            .to_uppercase()
-            .chain(chars.flat_map(|t| t.to_lowercase()))
-            .collect(),
-    }
-}
-
 fn find_root(mut current: PathBuf) -> Result<PathBuf> {
+    let candidates = ["Cargo.toml", "build.zig"];
     let file_exists = std::fs::read_dir(&current)?.any(|path| match path {
-        Ok(file) => file.file_name().to_string_lossy() == "Cargo.toml",
+        Ok(file) => candidates
+            .into_iter()
+            .any(|it| file.file_name().to_string_lossy() == it),
         Err(_) => false,
     });
 
@@ -201,6 +209,17 @@ fn find_language(current: PathBuf) -> Result<Language> {
         }
     }
     Err(eyre!("Language not found"))
+}
+
+fn titlecase(input: &str) -> String {
+    let mut chars = input.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(c) => c
+            .to_uppercase()
+            .chain(chars.flat_map(|t| t.to_lowercase()))
+            .collect(),
+    }
 }
 
 fn read_list(prefix: &str) -> Result<Vec<(String, String)>> {
@@ -291,7 +310,7 @@ fn read_format(wasm: Option<&PathBuf>) -> Result<Format> {
     ))
 }
 
-async fn upload(wasm: PathBuf, source_code: PathBuf, cargo_toml: Option<PathBuf>) -> Result<()> {
+async fn upload(wasm: PathBuf, source_code: PathBuf) -> Result<()> {
     // Get config
     let config = read_config()?;
     let client = StorageClient::new(&config.endpoint, &config.authorization);
@@ -304,12 +323,6 @@ async fn upload(wasm: PathBuf, source_code: PathBuf, cargo_toml: Option<PathBuf>
     // Verify that source code exists
     if !source_code.exists() {
         return Err(eyre!("{} doesn't exist", source_code.display()));
-    }
-
-    if let Some(ref cargo_toml) = cargo_toml {
-        if !cargo_toml.exists() {
-            return Err(eyre!("{} doesn't exist", cargo_toml.display()));
-        }
     }
 
     // Unique identifier
@@ -397,13 +410,6 @@ async fn upload(wasm: PathBuf, source_code: PathBuf, cargo_toml: Option<PathBuf>
         .from("node-files")
         .upload(&path, json.into_bytes())
         .await?;
-
-    // Cargo.toml
-    if let Some(ref cargo_toml) = cargo_toml {
-        let bytes = std::fs::read(&cargo_toml)?;
-        let path = format!("{base_path}/Cargo.toml");
-        client.from("node-files").upload(&path, bytes).await?;
-    }
 
     // Insert into database
     let client = Postgrest::new(format!("{}/rest/v1", config.endpoint))
