@@ -14,7 +14,7 @@ pub mod template {
     #[derive(TemplateOnce)]
     #[template(path = "lib.rs")]
     pub struct LibRs;
-    
+
     #[derive(TemplateOnce)]
     #[template(path = "config.toml")]
     pub struct ConfigToml;
@@ -24,7 +24,7 @@ pub mod template {
     pub struct BuildZig {
         pub name: String,
     }
-    
+
     #[derive(TemplateOnce)]
     #[template(path = "main.zig")]
     pub struct MainZig;
@@ -136,10 +136,10 @@ impl Format {
                 width: 150,
                 height: 125
                     + [targets.len(), sources.len()]
-                    .into_iter()
-                    .max()
-                    .unwrap_or(0)
-                    * 50,
+                        .into_iter()
+                        .max()
+                        .unwrap_or(0)
+                        * 50,
                 background_color: String::from("#ffd9b3"),
             },
             targets,
@@ -164,10 +164,24 @@ pub struct Node {
     pub is_public: bool,
     pub storage_path: String,
     pub source_code: String,
+    #[serde(rename = "priceOneTime")]
+    pub price_one_time: f64,
+    #[serde(rename = "pricePerRun")]
+    pub price_per_run: f64,
+    pub license_type: String,
 }
 
 impl Node {
-    pub fn new(name: String, storage_path: String, source_code: String, format: Format, is_public: bool) -> Self {
+    pub fn new(
+        name: String,
+        storage_path: String,
+        source_code: String,
+        format: Format,
+        is_public: bool,
+        price_one_time: f64,
+        price_per_run: f64,
+        license_type: String,
+    ) -> Self {
         let lowercase = name.to_lowercase();
         Self {
             name,
@@ -179,6 +193,9 @@ impl Node {
             is_public,
             storage_path,
             source_code,
+            price_one_time,
+            price_per_run,
+            license_type,
         }
     }
 }
@@ -217,7 +234,8 @@ impl StorageBuilder<'_> {
         let url = format!("{}/object/{}/{}", self.config.endpoint, self.bucket, path);
         let mime_type = mime_guess::from_path(path).first_or_octet_stream();
         let client = reqwest::Client::new();
-        client.post(&url)
+        client
+            .post(&url)
             .header("Authorization", &self.config.authorization)
             .header("Content-Type", mime_type.essence_str())
             .body(bytes)
@@ -226,4 +244,3 @@ impl StorageBuilder<'_> {
         Ok(())
     }
 }
-

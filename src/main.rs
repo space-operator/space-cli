@@ -279,20 +279,52 @@ async fn upload(wasm: PathBuf, source_code: PathBuf, cargo_toml: Option<PathBuf>
     let format = read_format(Some(&wasm))?;
     let json = serde_json::to_string_pretty(&format)?;
 
-    // Ask other questions related to public/private and license
-    let items = vec![
+    // Public or private
+    let booleans = vec![
         "true",
         "false"
     ];
     
     let index = FuzzySelect::new()
-        .items(&items)
-        .with_prompt(format!("Public"))
+        .items(&booleans)
+        .with_prompt("Public")
         .default(0)
         .report(false)
         .interact()?;
-    let is_public = items[index].parse::<bool>()?;
+    let is_public = booleans[index].parse::<bool>()?;
     println!("Public: {is_public}");
+
+    // One-time payment
+    let price_one_time = Input::<f64>::new()
+        .with_prompt("One-time payment")
+        .with_initial_text("0")
+        .interact_text()?;
+
+    // Price per run
+    let price_per_run = Input::<f64>::new()
+        .with_prompt("Price per run")
+        .with_initial_text("0")
+        .interact_text()?;
+
+    // License
+    let licenses = vec![
+        "MIT",
+        "Apache 2.0"
+    ];
+
+    let raw_licenses = vec![
+        "MIT",
+        "Apache",
+    ];
+    
+    let index = FuzzySelect::new()
+        .items(&licenses)
+        .with_prompt("License")
+        .default(0)
+        .report(false)
+        .interact()?;
+    let license = raw_licenses[index].to_string();
+    println!("License: {license}");
     
     // Upload the files
     let spinner = ProgressBar::new_spinner().with_message(format!(
@@ -343,7 +375,7 @@ async fn upload(wasm: PathBuf, source_code: PathBuf, cargo_toml: Option<PathBuf>
     let client = Postgrest::new(format!("{}/rest/v1", config.endpoint))
         .insert_header("apikey", config.apikey)
         .insert_header("authorization", config.authorization);
-    let node = Node::new(format.data.display_name.clone(), storage_path, source_code, format.clone(), is_public);
+    let node = Node::new(format.data.display_name.clone(), storage_path, source_code, format.clone(), is_public, price_one_time, price_per_run, license);
     client
         .from("nodes")
         .insert(serde_json::to_string(&node)?)
