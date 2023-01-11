@@ -82,7 +82,6 @@ async fn main() -> Result<()> {
                 apikey: defaults.apikey,
                 endpoint: defaults.endpoint,
                 authorization,
-                
             };
             let toml = toml::to_string(&config)?;
 
@@ -280,11 +279,8 @@ async fn upload(wasm: PathBuf, source_code: PathBuf, cargo_toml: Option<PathBuf>
     let json = serde_json::to_string_pretty(&format)?;
 
     // Public or private
-    let booleans = vec![
-        "true",
-        "false"
-    ];
-    
+    let booleans = vec!["true", "false"];
+
     let index = FuzzySelect::new()
         .items(&booleans)
         .with_prompt("Public")
@@ -307,16 +303,10 @@ async fn upload(wasm: PathBuf, source_code: PathBuf, cargo_toml: Option<PathBuf>
         .interact_text()?;
 
     // License
-    let licenses = vec![
-        "MIT",
-        "Apache 2.0"
-    ];
+    let licenses = vec!["MIT", "Apache 2.0"];
 
-    let raw_licenses = vec![
-        "MIT",
-        "Apache",
-    ];
-    
+    let raw_licenses = vec!["MIT", "Apache"];
+
     let index = FuzzySelect::new()
         .items(&licenses)
         .with_prompt("License")
@@ -325,7 +315,7 @@ async fn upload(wasm: PathBuf, source_code: PathBuf, cargo_toml: Option<PathBuf>
         .interact()?;
     let license = raw_licenses[index].to_string();
     println!("License: {license}");
-    
+
     // Upload the files
     let spinner = ProgressBar::new_spinner().with_message(format!(
         "Uploading {}@{}...",
@@ -358,7 +348,10 @@ async fn upload(wasm: PathBuf, source_code: PathBuf, cargo_toml: Option<PathBuf>
         .await?;
 
     // JSON
-    let path = format!("{base_path}/{}.json", format.data.display_name.to_lowercase().replace(" ", "_"));
+    let path = format!(
+        "{base_path}/{}.json",
+        format.data.display_name.to_lowercase().replace(" ", "_")
+    );
     client
         .from("node-files")
         .upload(&path, json.into_bytes())
@@ -375,7 +368,16 @@ async fn upload(wasm: PathBuf, source_code: PathBuf, cargo_toml: Option<PathBuf>
     let client = Postgrest::new(format!("{}/rest/v1", config.endpoint))
         .insert_header("apikey", config.apikey)
         .insert_header("authorization", config.authorization);
-    let node = Node::new(format.data.display_name.clone(), storage_path, source_code, format.clone(), is_public, price_one_time, price_per_run, license);
+    let node = Node::new(
+        format.data.display_name.clone(),
+        storage_path,
+        source_code,
+        format.clone(),
+        is_public,
+        price_one_time,
+        price_per_run,
+        license,
+    );
     client
         .from("nodes")
         .insert(serde_json::to_string(&node)?)
@@ -383,7 +385,13 @@ async fn upload(wasm: PathBuf, source_code: PathBuf, cargo_toml: Option<PathBuf>
         .await?;
 
     spinner.finish_and_clear();
-    println!("Finished uploading {}@{}!", format.data.display_name, format.data.version);
+    println!(
+        "Finished uploading {}@{}!",
+        format.data.display_name, format.data.version
+    );
+
+    // Open with browser
+    open::that(format!("https://spaceoperator.com/dashboard/nodes/{}", node.unique_node_id))?;
 
     Ok(())
 }
