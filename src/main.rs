@@ -34,6 +34,8 @@ enum Command {
 struct Manual {
     /// Path to WASM binary
     wasm: PathBuf,
+    /// Path to node declaration
+    json: PathBuf,
     /// Path to source code
     source_code: PathBuf,
 }
@@ -152,7 +154,7 @@ async fn main() -> Result<()> {
                         .next()
                         .ok_or(eyre!("WASM not found"))??;
                     let source_code = PathBuf::from("src/main.zig");
-                    upload(wasm, source_code).await?;
+                    upload(wasm, source_code, None).await?;
                 }
                 Language::Rust => {
                     // Build project in release mode
@@ -163,11 +165,11 @@ async fn main() -> Result<()> {
                         .next()
                         .ok_or(eyre!("WASM not found"))??;
                     let source_code = PathBuf::from("src/lib.rs");
-                    upload(wasm, source_code).await?;
+                    upload(wasm, source_code, None).await?;
                 }
             };
         }
-        Command::Manual(Manual { wasm, source_code }) => upload(wasm, source_code).await?,
+        Command::Manual(Manual { wasm, source_code, json }) => upload(wasm, source_code, Some(json)).await?,
         Command::Generate => {
             let format = read_format(None)?;
             let json = serde_json::to_string_pretty(&format)?;
@@ -310,7 +312,7 @@ fn read_format(wasm: Option<&PathBuf>) -> Result<Format> {
     ))
 }
 
-async fn upload(wasm: PathBuf, source_code: PathBuf) -> Result<()> {
+async fn upload(wasm: PathBuf, source_code: PathBuf, json: Option<PathBuf>) -> Result<()> {
     // Get config
     let config = read_config()?;
     let client = StorageClient::new(&config.endpoint, &config.authorization);
@@ -328,9 +330,19 @@ async fn upload(wasm: PathBuf, source_code: PathBuf) -> Result<()> {
     // Unique identifier
     let base_path = Uuid::new_v4();
 
-    // Get json from dialogue
-    let format = read_format(Some(&wasm))?;
-    let json = serde_json::to_string_pretty(&format)?;
+    // Get json from dialogue or file
+    let (format, json) = match json {
+        Some(path) => {
+            let json = std::fs::read_to_string(path)?;
+            let format: Format = serde_json::from_str(&json)?;
+            (format, json)
+        },
+        None => {
+            let format = read_format(Some(&wasm))?;
+            let json = serde_json::to_string_pretty(&format)?;
+            (format, json)
+        },
+    };
 
     // Public or private
     let booleans = vec!["true", "false"];
@@ -343,18 +355,6 @@ async fn upload(wasm: PathBuf, source_code: PathBuf) -> Result<()> {
         .interact()?;
     let is_public = booleans[index].parse::<bool>()?;
     println!("Public: {is_public}");
-
-    // One-time payment
-    let price_one_time = Input::<f64>::new()
-        .with_prompt("One-time payment")
-        .with_initial_text("0")
-        .interact_text()?;
-
-    // Price per run
-    let price_per_run = Input::<f64>::new()
-        .with_prompt("Price per run")
-        .with_initial_text("0")
-        .interact_text()?;
 
     // License
     let licenses = vec!["MIT", "Apache 2.0"];
@@ -369,6 +369,18 @@ async fn upload(wasm: PathBuf, source_code: PathBuf) -> Result<()> {
         .interact()?;
     let license = raw_licenses[index].to_string();
     println!("License: {license}");
+
+    // One-time payment
+    let price_one_time = Input::<f64>::new()
+        .with_prompt("One-time payment")
+        .with_initial_text("0")
+        .interact_text()?;
+
+    // Price per run
+    let price_per_run = Input::<f64>::new()
+        .with_prompt("Price per run")
+        .with_initial_text("0")
+        .interact_text()?;
 
     // Upload the files
     let spinner = ProgressBar::new_spinner().with_message(format!(
