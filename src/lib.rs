@@ -43,7 +43,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            apikey: String::from("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh5amJvYmxramVldmt6YXFzeXhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NTQwMTEyNTgsImV4cCI6MTk2OTU4NzI1OH0.L20s98fiTqfPWyTTSe-zjgoovQYhkJGKE7K8h9_-drY"),
+            apikey: String::from("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh5amJvYmxramVldmt6YXFzeXhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NzQxMzQ0NDQsImV4cCI6MTk4OTcxMDQ0NH0.ZcjbEUqBCn87vXAfVU4qhJ9DdT-HeqQqwdSgqvF59Bc"),
             endpoint: String::from("https://hyjboblkjeevkzaqsyxe.supabase.co"),
             authorization: String::default(),
         }

@@ -18,8 +18,8 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Authenticate and store token locally
-    Init,
+    /// Login by store token locally
+    Login,
     /// Create a new WASM project
     New(New),
     /// Upload WASM project to Space Operator
@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
 
     // Parse arguments
     match args.command {
-        Command::Init => {
+        Command::Login => {
             // Get defaults
             let defaults = read_config().unwrap_or_default();
 
