@@ -18,16 +18,6 @@ pub mod template {
     #[derive(TemplateOnce)]
     #[template(path = "config.toml")]
     pub struct ConfigToml;
-
-    #[derive(TemplateOnce)]
-    #[template(path = "build.zig")]
-    pub struct BuildZig {
-        pub name: String,
-    }
-
-    #[derive(TemplateOnce)]
-    #[template(path = "main.zig")]
-    pub struct MainZig;
 }
 
 // Upload form
@@ -198,12 +188,6 @@ impl Node {
             license_type,
         }
     }
-}
-
-// Project type
-pub enum Language {
-    Zig,
-    Rust,
 }
 
 // Storage client

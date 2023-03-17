@@ -5,8 +5,8 @@ use indicatif::ProgressBar;
 use platform_dirs::AppDirs;
 use postgrest::Postgrest;
 use sailfish::TemplateOnce;
-use space::{eyre, template, Config, Format, Language, Node, Result, StorageClient};
-use std::{borrow::Cow, fs::File, io::Write, path::PathBuf, time::Duration};
+use space::{eyre, template, Config, Format, Node, Result, StorageClient};
+use std::{fs::File, io::Write, path::PathBuf, time::Duration};
 use uuid::Uuid;
 
 #[derive(Parser)]
@@ -92,82 +92,37 @@ async fn main() -> Result<()> {
             println!("{message}");
         }
         Command::New(New { name }) => {
-            // Ask for language
-            let languages = vec!["rust", "zig"];
+            // Create folders
+            std::fs::create_dir_all(format!("{name}/src"))?;
+            std::fs::create_dir_all(format!("{name}/.cargo"))?;
 
-            let index = FuzzySelect::new()
-                .items(&languages)
-                .with_prompt("Language")
-                .default(0)
-                .report(false)
-                .interact()?;
+            // Create Cargo.toml
+            let metadata = template::CargoToml { name: name.clone() }.render_once()?;
+            std::fs::write(format!("{name}/Cargo.toml"), metadata)?;
 
-            match languages[index] {
-                "rust" => {
-                    // Create folders
-                    std::fs::create_dir_all(format!("{name}/src"))?;
-                    std::fs::create_dir_all(format!("{name}/.cargo"))?;
+            // Create lib.rs
+            let main = template::LibRs.render_once()?;
+            std::fs::write(format!("{name}/src/lib.rs"), main)?;
 
-                    // Create Cargo.toml
-                    let metadata = template::CargoToml { name: name.clone() }.render_once()?;
-                    std::fs::write(format!("{name}/Cargo.toml"), metadata)?;
-
-                    // Create lib.rs
-                    let main = template::LibRs.render_once()?;
-                    std::fs::write(format!("{name}/src/lib.rs"), main)?;
-
-                    // Create config.toml
-                    let config = template::ConfigToml.render_once()?;
-                    std::fs::write(format!("{name}/.cargo/config.toml"), config)?;
-                }
-                "zig" => {
-                    // Create folders
-                    std::fs::create_dir_all(format!("{name}/src"))?;
-
-                    // Create main.zig
-                    let main = template::MainZig.render_once()?;
-                    std::fs::write(format!("{name}/src/main.zig"), main)?;
-
-                    // Create build.zig
-                    let build = template::BuildZig { name: name.clone() }.render_once()?;
-                    std::fs::write(format!("{name}/build.zig"), build)?;
-                }
-                _ => return Err(eyre!("Invalid language chosen")),
-            }
-
+            // Create config.toml
+            let config = template::ConfigToml.render_once()?;
+            std::fs::write(format!("{name}/.cargo/config.toml"), config)?;
             println!("Created new project `{name}`");
         }
         Command::Upload => {
             // Find root config file then change it
             let directory = find_root(std::env::current_dir()?)?;
             std::env::set_current_dir(directory)?;
-            let language = find_language(std::env::current_dir()?)?;
 
-            // Upload based on language
-            match language {
-                Language::Zig => {
-                    // Build project in release mode
-                    duct::cmd!("zig", "build").run()?;
+            // Build project in release mode
+            duct::cmd!("cargo", "build", "--release", "--target", "wasm32-wasi").run()?;
 
-                    // Find the files then upload
-                    let wasm = glob("zig-out/lib/*.wasm")?
-                        .next()
-                        .ok_or(eyre!("WASM not found"))??;
-                    let source_code = PathBuf::from("src/main.zig");
-                    upload(wasm, source_code, None).await?;
-                }
-                Language::Rust => {
-                    // Build project in release mode
-                    duct::cmd!("cargo", "build", "--release", "--target", "wasm32-wasi").run()?;
-
-                    // Find the files then upload
-                    let wasm = glob("target/wasm32-wasi/release/*.wasm")?
-                        .next()
-                        .ok_or(eyre!("WASM not found"))??;
-                    let source_code = PathBuf::from("src/lib.rs");
-                    upload(wasm, source_code, None).await?;
-                }
-            };
+            // Find the files then upload
+            let wasm = glob("target/wasm32-wasi/release/*.wasm")?
+                .next()
+                .ok_or(eyre!("WASM not found"))??;
+            let source_code = PathBuf::from("src/lib.rs");
+            upload(wasm, source_code, None).await?;
         }
         Command::Manual(Manual { wasm, source_code, json }) => upload(wasm, source_code, Some(json)).await?,
         Command::Generate => {
@@ -202,17 +157,6 @@ fn find_root(mut current: PathBuf) -> Result<PathBuf> {
     }
 }
 
-fn find_language(current: PathBuf) -> Result<Language> {
-    for entry in std::fs::read_dir(&current)? {
-        match entry?.file_name().to_string_lossy() {
-            Cow::Borrowed("Cargo.toml") => return Ok(Language::Rust),
-            Cow::Borrowed("build.zig") => return Ok(Language::Zig),
-            _ => continue,
-        }
-    }
-    Err(eyre!("Language not found"))
-}
-
 fn titlecase(input: &str) -> String {
     let mut chars = input.chars();
     match chars.next() {
@@ -227,25 +171,12 @@ fn titlecase(input: &str) -> String {
 fn read_list(prefix: &str) -> Result<Vec<(String, String)>> {
     let items = vec![
         "bool",
-        "u8",
-        "u16",
-        "u32",
         "u64",
-        "u128",
-        "i8",
-        "i16",
-        "i32",
         "i64",
-        "f32",
         "f64",
-        "pubkey",
-        "keypair",
-        "signature",
         "string",
         "array",
         "object",
-        "json",
-        "file",
     ];
     let mut values = Vec::new();
     loop {
