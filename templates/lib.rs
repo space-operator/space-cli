@@ -3,13 +3,13 @@ use serde::{Serialize, Deserialize};
 
 #[derive(Deserialize)]
 struct Input {
-    value: usize,
+    value: u64,
     name: String,
 }
 
 #[derive(Serialize)]
 struct Output {
-    value: usize,
+    value: u64,
     name: String,
 }
 
